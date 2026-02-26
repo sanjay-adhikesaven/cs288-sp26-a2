@@ -10,6 +10,9 @@ def softmax(x: Tensor, dim: int = -1) -> Tensor:
     """
     Compute softmax along the specified dimension.
     
+    Implements the numerically stable softmax:
+        softmax(x)_i = exp(x_i - max(x)) / sum(exp(x_j - max(x)))
+    
     Args:
         x: Input tensor of any shape
         dim: Dimension along which to compute softmax (default: -1)
@@ -17,10 +20,13 @@ def softmax(x: Tensor, dim: int = -1) -> Tensor:
     Returns:
         Tensor of same shape as input with softmax applied along dim
     """
-    # TODO: Implement numerically stable softmax. You can re-use the same one 
+    # Implement numerically stable softmax. You can re-use the same one 
     # used in part 2. But for this problem, you need to implement a numerically stable version to pass harder tests.
     
-    raise NotImplementedError("Implement softmax")
+    m, _ = x.max(dim = dim, keepdim=True)
+    exp_x = torch.exp(x - m)
+
+    return exp_x/exp_x.sum(dim = dim, keepdim = True)
 
 
 def cross_entropy(logits: Tensor, targets: Tensor) -> Tensor:
@@ -35,14 +41,21 @@ def cross_entropy(logits: Tensor, targets: Tensor) -> Tensor:
     Returns:
         Scalar tensor containing the mean cross-entropy loss
     """
-    # TODO: Implement cross-entropy loss
-    
-    raise NotImplementedError("Implement cross_entropy")
+    m, _ = logits.max(dim = -1, keepdim=True)
+    log_probs = (logits - m) - torch.log(torch.exp(logits -m).sum(dim = -1, keepdim = True))
+
+    nll = -log_probs.gather(dim = 1, index = targets.unsqueeze(1))
+
+    return nll.mean()
 
 
 def gradient_clipping(parameters, max_norm: float) -> Tensor:
     """
     Clip gradients of parameters by global norm.
+    
+    Implements gradient clipping by norm:
+        if total_norm > max_norm:
+            grad = grad * max_norm / total_norm
     
     Args:
         parameters: Iterable of parameters with gradients
@@ -51,9 +64,22 @@ def gradient_clipping(parameters, max_norm: float) -> Tensor:
     Returns:
         The total norm of the gradients before clipping
     """
-    # TODO: Implement gradient clipping
     
-    raise NotImplementedError("Implement gradient_clipping")
+    total_grad = 0.0
+    for p in parameters:
+        if p.grad is not None:
+            total_grad += torch.sum(p.grad**2)
+    
+    total_norm = total_grad.sqrt()
+
+    if total_norm.item() > max_norm:
+        for p in parameters:
+            if p.grad is not None:
+                p.grad.mul_(max_norm / total_norm)
+    
+    return total_norm
+
+
 
 
 def token_accuracy(logits: Tensor, targets: Tensor, ignore_index: int = -100) -> Tensor:
@@ -83,9 +109,13 @@ def token_accuracy(logits: Tensor, targets: Tensor, ignore_index: int = -100) ->
         >>> token_accuracy(logits, targets)
         tensor(0.6667)  # 2 out of 3 correct
     """
-    # TODO: Implement token accuracy
-    
-    raise NotImplementedError("Implement token_accuracy")
+    predictions = logits.argmax(dim = -1)
+    valid_mask = (targets != ignore_index)
+
+    return (predictions[valid_mask] == targets[valid_mask]).float().mean()
+
+
+
 
 
 def perplexity(logits: Tensor, targets: Tensor, ignore_index: int = -100) -> Tensor:
@@ -118,6 +148,12 @@ def perplexity(logits: Tensor, targets: Tensor, ignore_index: int = -100) -> Ten
         >>> perplexity(logits, targets)
         tensor(3.)  # Equal to vocab_size (worst case for uniform)
     """
-    # TODO: Implement perplexity
     
-    raise NotImplementedError("Implement perplexity")
+    m, _ = logits.max(dim = -1, keepdim=True)
+    log_probs = (logits - m) - torch.log(torch.exp(logits -m).sum(dim = -1, keepdim = True))
+
+    targets_ignored = targets.masked_fill(targets == ignore_index, 0)
+    nll = -log_probs.gather(dim = 1, index = targets_ignored.unsqueeze(1))
+
+    return torch.exp(nll[targets != ignore_index].mean())
+

@@ -9,7 +9,6 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 
-
 # =============================================================================
 # Problem (linear): Implementing the linear module
 # =============================================================================
@@ -50,9 +49,10 @@ class Linear(nn.Module):
         Returns:
             Output tensor of shape (..., d_out)
         """
-        # TODO: Implement linear transformation
+        # Implement linear transformation
+        # Return x @ self.weight.T
         
-        raise NotImplementedError("Implement Linear.forward")
+        return x @ self.weight.T
 
 
 # =============================================================================
@@ -76,7 +76,7 @@ class Embedding(nn.Module):
         self.vocab_size = vocab_size
         self.d_model = d_model
         # Embedding weight matrix of shape (vocab_size, d_model)
-        # TODO: Implement embedding
+        self.weight = nn.Parameter(torch.empty(vocab_size, d_model))
         self._init_weights()
     
     def _init_weights(self):
@@ -93,9 +93,11 @@ class Embedding(nn.Module):
         Returns:
             Tensor of embeddings of shape (batch, seq_len, d_model)
         """
-        # TODO: Implement embedding lookup
+        # Implement embedding lookup
+        # Use token_ids to index into self.weight
+        # Return self.weight[token_ids]
         
-        raise NotImplementedError("Implement Embedding.forward")
+        return self.weight[token_ids]
 
 
 # =============================================================================
@@ -140,9 +142,11 @@ class RMSNorm(nn.Module):
         Returns:
             Normalized tensor of same shape
         """
-        # TODO: Implement RMS normalization
+        # Implement RMS normalization
         
-        raise NotImplementedError("Implement RMSNorm.forward")
+        rms_norm = torch.sqrt(torch.mean(x.square(), dim=-1) + self.eps).unsqueeze(-1)
+
+        return (x / rms_norm) * self.weight
 
 
 # =============================================================================
@@ -153,6 +157,9 @@ def softmax(x: Tensor, dim: int = -1) -> Tensor:
     """
     Compute softmax along the specified dimension.
     
+    Implements the numerically stable softmax:
+        softmax(x)_i = exp(x_i - max(x)) / sum(exp(x_j - max(x)))
+    
     Args:
         x: Input tensor of any shape
         dim: Dimension along which to compute softmax (default: -1)
@@ -160,9 +167,11 @@ def softmax(x: Tensor, dim: int = -1) -> Tensor:
     Returns:
         Tensor of same shape as input with softmax applied along dim
     """
-    # TODO: Implement numerically stable softmax
+    m, _ = x.max(dim = dim, keepdim=True)
+    exp_x = torch.exp(x - m)
+
+    return exp_x/exp_x.sum(dim = dim, keepdim = True)
     
-    raise NotImplementedError("Implement softmax")
 
 # =============================================================================
 # SiLU activation (helper for SwiGLU)
@@ -171,7 +180,7 @@ def softmax(x: Tensor, dim: int = -1) -> Tensor:
 def silu(x: Tensor) -> Tensor:
     """
     SiLU (Sigmoid Linear Unit) activation function.
-    https://arxiv.org/abs/1702.03118
+    Also known as Swish: silu(x) = x * sigmoid(x)
     
     Args:
         x: Input tensor
@@ -179,9 +188,11 @@ def silu(x: Tensor) -> Tensor:
     Returns:
         Tensor with SiLU applied element-wise
     """
-    # TODO: Implement SiLU activation
+    # Implement SiLU activation
+    # Return x * torch.sigmoid(x)
     
-    raise NotImplementedError("Implement silu")
+    
+    return x * torch.sigmoid(x)
 
 
 # =============================================================================
@@ -191,9 +202,16 @@ def silu(x: Tensor) -> Tensor:
 class SwiGLU(nn.Module):
     """
     SwiGLU Feed-Forward Network.
-    https://arxiv.org/pdf/2002.05202
     
     SwiGLU is a variant of the GLU (Gated Linear Unit) that uses SiLU activation.
+    It has three linear projections: gate, up, and down.
+    
+    SwiGLU(x) = (SiLU(x @ W1^T) * (x @ W3^T)) @ W2^T
+    
+    Where:
+        - W1 is the gate projection
+        - W3 is the up projection  
+        - W2 is the down projection
     """
     
     def __init__(self, d_model: int, d_ff: int):
@@ -219,15 +237,18 @@ class SwiGLU(nn.Module):
         """
         Apply SwiGLU transformation.
         
+        SwiGLU(x) = (SiLU(x @ W1^T) * (x @ W3^T)) @ W2^T
+        
         Args:
             x: Input tensor of shape (..., d_model)
         
         Returns:
             Output tensor of shape (..., d_model)
         """
-        # TODO: Implement SwiGLU
-        
-        raise NotImplementedError("Implement SwiGLU.forward")
+
+        gate = silu(self.w1(x))
+
+        return self.w2(gate * self.w3(x))
 
 
 # =============================================================================
@@ -241,51 +262,8 @@ class RotaryPositionEmbedding(nn.Module):
     RoPE encodes position information by rotating the query and key vectors
     in a way that makes the dot product depend on relative position.
     
-    Mathematical Background:
-    ------------------------
-    RoPE applies a rotation matrix to pairs of dimensions. For a vector x at
-    position m, each pair of dimensions (2i, 2i+1) is rotated by angle m * θ_i.
-    
-    The rotation angle for dimension pair i at position m is:
-        angle_{m,i} = m * θ_i
-        where θ_i = 1 / (base ^ (2i / d))
-    
-    For base=10000 and d=4 (head dimension):
-        θ_0 = 1 / (10000 ^ (0/4)) = 1.0        (for dims 0,1)
-        θ_1 = 1 / (10000 ^ (2/4)) = 0.01       (for dims 2,3)
-    
-    Implementation Details:
-    -----------------------
-    Instead of explicitly constructing rotation matrices, we use the identity:
-    
-        [cos(θ)  -sin(θ)] [x1]   [x1 * cos(θ) - x2 * sin(θ)]
-        [sin(θ)   cos(θ)] [x2] = [x1 * sin(θ) + x2 * cos(θ)]
-    
-    This is equivalent to:
-        x_rotated = x * cos(θ) + rotate_half(x) * sin(θ)
-    
-    Where rotate_half swaps and negates halves of the vector.
-    
-    Worked Example:
-    ---------------
-    For d_model=4, position m=2, base=10000:
-    
-    1. Compute inverse frequencies:
-       inv_freq = [1/10000^(0/4), 1/10000^(2/4)] = [1.0, 0.01]
-    
-    2. Compute angles for position 2:
-       angles = 2 * [1.0, 0.01] = [2.0, 0.02]
-    
-    3. Duplicate for paired dimensions:
-       full_angles = [2.0, 0.02, 2.0, 0.02]  (via torch.cat([angles, angles]))
-    
-    4. Compute cos and sin:
-       cos_cached[2] = [cos(2.0), cos(0.02), cos(2.0), cos(0.02)]
-       sin_cached[2] = [sin(2.0), sin(0.02), sin(2.0), sin(0.02)]
-    
-    5. For input x = [x0, x1, x2, x3]:
-       rotate_half(x) = [-x2, -x3, x0, x1]  (negate first half, swap)
-       x_rotated = x * cos + rotate_half(x) * sin
+    For each pair of dimensions (2i, 2i+1), we rotate by angle m * theta_i,
+    where m is the position and theta_i = 1 / (base ^ (2i / d)).
     """
     
     def __init__(self, d_model: int, max_seq_len: int, theta: float = 10000.0):
@@ -304,7 +282,7 @@ class RotaryPositionEmbedding(nn.Module):
         
         # Precompute frequencies
         # inv_freq shape: (d_model // 2,)
-        # TODO: Implement inv_freq
+        inv_freq = 1.0 / (theta ** (torch.arange(0, d_model, 2).float() / d_model))
         self.register_buffer("inv_freq", inv_freq)
         
         # Precompute cos and sin for all positions
@@ -329,70 +307,38 @@ class RotaryPositionEmbedding(nn.Module):
         """
         Rotate half the hidden dims of the input.
         
-        This implements the "rotation" part of RoPE by rearranging dimensions.
-        
-        Operation:
-            Split x into two halves along the last dimension:
-                x1 = x[..., :d//2]  (first half)
-                x2 = x[..., d//2:]  (second half)
-            Return: [-x2, x1] concatenated
-        
-        Concrete Example:
-            Input:  x = [a, b, c, d]  (d_model=4)
-            Output: [-c, -d, a, b]
-            
-            Input:  x = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]  (d_model=6)
-            x1 = [1.0, 2.0, 3.0]
-            x2 = [4.0, 5.0, 6.0]
-            Output: [-4.0, -5.0, -6.0, 1.0, 2.0, 3.0]
-        
-        Implementation:
-            x1, x2 = x[..., :x.shape[-1]//2], x[..., x.shape[-1]//2:]
-            return torch.cat([-x2, x1], dim=-1)
+        For input [..., [x1, x2, x3, x4, ...]], return [..., [-x3, -x4, ..., x1, x2, ...]]
         """
-        # TODO: Implement rotate_half
-        
-        raise NotImplementedError("Implement _rotate_half")
+
+        last_dim = x.shape[-1]
+        first_half = x[..., :last_dim//2]
+        second_half = x[..., last_dim//2:]
+
+        return torch.cat([-second_half, first_half], dim = -1)
+    
     
     def forward(self, x: Tensor, token_positions: Tensor) -> Tensor:
         """
         Apply rotary position embedding.
         
         Args:
-            x: Input tensor of shape (batch, num_heads, seq_len, d_k)
-               or (..., seq_len, d_model)
+            x: Input tensor of shape (..., seq_len, d_model) or (batch, num_heads, seq_len, d_k)
             token_positions: Position indices of shape (batch, seq_len) or (seq_len,)
         
         Returns:
             Tensor with rotary position embedding applied, same shape as input
         
-        Formula:
-            x_rotated = x * cos(θ) + rotate_half(x) * sin(θ)
-        
-        Implementation Steps:
-            1. Index into precomputed cos/sin using token_positions:
-               cos = self.cos_cached[token_positions]  # shape: (batch, seq_len, d_model)
-               sin = self.sin_cached[token_positions]  # shape: (batch, seq_len, d_model)
-            
-            2. Handle broadcasting for 4D input (batch, heads, seq, d_k):
-               If x has 4 dimensions, expand cos/sin with unsqueeze(1) to broadcast
-               over the heads dimension.
-            
-            3. Apply the rotation formula:
-               return x * cos + self._rotate_half(x) * sin
-        
-        Example:
-            x = tensor of shape (2, 8, 10, 64)  # batch=2, heads=8, seq=10, d_k=64
-            positions = tensor of shape (2, 10)  # positions for each sequence
-            
-            cos = self.cos_cached[positions]  # (2, 10, 64)
-            cos = cos.unsqueeze(1)            # (2, 1, 10, 64) - broadcasts over heads
-            
-            x_rotated = x * cos + rotate_half(x) * sin  # (2, 8, 10, 64)
+        Formula: x_rotated = x * cos(theta) + rotate_half(x) * sin(theta)
         """
-        # TODO: Implement RoPE forward pass
+        cos = self.cos_cached[token_positions]
+        sin = self.sin_cached[token_positions]
+        rotated = self._rotate_half(x)
+
+        if len(x.shape) == 4:
+            cos = cos.unsqueeze(1)
+            sin = sin.unsqueeze(1)
         
-        raise NotImplementedError("Implement RotaryPositionEmbedding.forward")
+        return x * cos + rotated * sin
 
 
 def apply_rope(x: Tensor, d_model: int, theta: float, max_seq_len: int, token_positions: Tensor) -> Tensor:
@@ -440,10 +386,15 @@ def scaled_dot_product_attention(
         Attention output of shape (..., seq_len_q, d_v)
     """
     d_k = Q.shape[-1]
+
+    attention_scores = (Q @ K.transpose(-2, -1)) / math.sqrt(d_k)
+
+    if mask is not None:
+        attention_scores = attention_scores.masked_fill(~mask, float("-inf"))
     
-    # TODO: Implement scaled dot-product attention
-    
-    raise NotImplementedError("Implement scaled_dot_product_attention")
+    if not torch.any(attention_scores != float("-inf")):
+        return torch.zeros(*Q.shape[:-1], V.shape[-1])
+    return softmax(attention_scores, dim = -1) @ V
 
 
 # =============================================================================
@@ -498,9 +449,24 @@ class MultiHeadSelfAttention(nn.Module):
         """
         batch_size, seq_len, _ = x.shape
         
-        # TODO: Implement multi-head self-attention
-        
-        raise NotImplementedError("Implement MultiHeadSelfAttention.forward")
+        Q_BLD = self.q_proj(x)
+        K_BLD = self.k_proj(x)
+        V_BLD = self.v_proj(x)
+
+
+        Q_BHLD = Q_BLD.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        K_BHLD = K_BLD.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        V_BHLD = V_BLD.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+
+        causal_mask = self._create_causal_mask(seq_len, device=torch.device('cpu'))
+        output = scaled_dot_product_attention(Q_BHLD, K_BHLD, V_BHLD, causal_mask)
+
+        output = output.transpose(1, 2).reshape(batch_size, seq_len, self.d_model)
+
+        return self.output_proj(output)
+
+
+
 
 
 class MultiHeadSelfAttentionWithRoPE(nn.Module):
@@ -562,9 +528,22 @@ class MultiHeadSelfAttentionWithRoPE(nn.Module):
         if token_positions is None:
             token_positions = torch.arange(seq_len, device=x.device).unsqueeze(0).expand(batch_size, -1)
         
-        # TODO: Implement multi-head self-attention with RoPE
-        
-        raise NotImplementedError("Implement MultiHeadSelfAttentionWithRoPE.forward")
+        Q_BLD = self.q_proj(x)
+        K_BLD = self.k_proj(x)
+        V_BLD = self.v_proj(x)
+
+
+        Q_BHLD = Q_BLD.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        K_BHLD = K_BLD.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+        V_BHLD = V_BLD.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
+
+        causal_mask = self._create_causal_mask(seq_len, device=torch.device('cpu'))
+        output = scaled_dot_product_attention(self.rope(Q_BHLD, token_positions), self.rope(K_BHLD, token_positions), V_BHLD, causal_mask)
+
+        output = output.transpose(1, 2).reshape(batch_size, seq_len, self.d_model)
+
+        return self.output_proj(output)
+
 
 
 # =============================================================================
@@ -615,7 +594,11 @@ class TransformerBlock(nn.Module):
     def forward(self, x: Tensor, token_positions: Optional[Tensor] = None) -> Tensor:
         """
         Apply Transformer block (Pre-LN style).
-
+        
+        Structure:
+            x = x + Attention(RMSNorm(x))
+            x = x + FFN(RMSNorm(x))
+        
         Args:
             x: Input tensor of shape (batch, seq_len, d_model)
             token_positions: Optional position indices
@@ -623,9 +606,13 @@ class TransformerBlock(nn.Module):
         Returns:
             Output tensor of shape (batch, seq_len, d_model)
         """
-        # TODO: Implement Transformer block forward pass
-        
-        raise NotImplementedError("Implement TransformerBlock.forward")
+        if token_positions is not None:
+            x = x + self.attn(self.ln1(x), token_positions)
+        else:
+            x = x + self.attn(self.ln1(x))
+        x = x + self.ffn(self.ln2(x))
+
+        return x
 
 
 # =============================================================================
@@ -707,9 +694,12 @@ class TransformerLM(nn.Module):
         if token_positions is None:
             token_positions = torch.arange(seq_len, device=token_ids.device).unsqueeze(0).expand(batch_size, -1)
         
-        # TODO: Implement TransformerLM forward pass
-        
-        raise NotImplementedError("Implement TransformerLM.forward")
+        x = self.token_embeddings(token_ids)
+        for layer in self.layers:
+            x = layer(x, token_positions)
+        x = self.final_ln(x)
+
+        return self.output(x)
     
     def load_weights(self, state_dict: dict):
         """
@@ -801,9 +791,12 @@ def count_flops_per_token(
     Returns:
         Approximate FLOPs per token
     """
-    # TODO: Implement FLOPs counting
     
-    raise NotImplementedError("Implement count_flops_per_token")
+    attn_proj = 8 * context_length * d_model * d_model
+    attn_quad = 4 * context_length * context_length * d_model
+    ffn = 6 * context_length * d_model * d_ff
+
+    return (attn_proj + attn_quad + ffn) * num_layers
 
 
 def estimate_memory_bytes(
@@ -826,6 +819,9 @@ def estimate_memory_bytes(
     Returns:
         Approximate memory in bytes
     """
-    # TODO: Implement memory estimation
+    attn_proj = dtype_bytes * 4 * (2*d_model + d_model * d_model)
+    attn_quad = dtype_bytes * (4*d_model)
+    ffn = dtype_bytes * 3 * (d_model + d_ff + d_ff * d_model)
     
-    raise NotImplementedError("Implement estimate_memory_bytes")
+    return (attn_proj + attn_quad + ffn) * num_layers
+

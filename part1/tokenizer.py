@@ -81,10 +81,35 @@ class Tokenizer:
         if len(tokens) <= 1:
             return tokens
         
-        # TODO: Implement BPE algorithm
-        # Return tokens
+        # approach: slide through tokens and look at all tokens (tokens[i] + tokens[i+1])
+        # find the rank of this via self.inverse.vocab and after each iteration, save the lowest vocab rank + occurances
+        # merge all occurences of that pair together by combining the tokens (effecitvely reducing list length 1 at a time)
+        # keep going until no pairs can be merged - this occurs if no pair is within the vocab 
+
+        while True:
+            lowest_merge_rank = float("inf")
+            best_pair_bytes = None
+            for i in range(len(tokens) - 1):
+                current_pair = tokens[i] + tokens[i+1] # current pair bytes
+                if current_pair in self.inverse_vocab and self.inverse_vocab[current_pair] < lowest_merge_rank:
+                    lowest_merge_rank = self.inverse_vocab[current_pair]
+                    best_pair_bytes = current_pair
+                
+            if best_pair_bytes is None:
+                return tokens
         
-        raise NotImplementedError("Implement _bpe")
+            new_tokens = []
+            current_index = 0
+            while current_index < len(tokens):
+                if current_index < (len(tokens) - 1) and (tokens[current_index] + tokens[current_index+1] == best_pair_bytes):
+                    new_tokens.append(best_pair_bytes)
+                    current_index += 2
+                else:
+                    new_tokens.append(tokens[current_index])
+                    current_index += 1
+            
+            tokens = new_tokens
+        
 
     def _split_with_special_tokens(self, text: str) -> list[tuple[str, bool]]:
         """
@@ -93,35 +118,13 @@ class Tokenizer:
         """
         if not self.special_tokens_sorted:
             return [(text, False)] if text else []
-        
-        result = []
-        remaining = text
-        
-        while remaining:
-            # Find the earliest occurring special token
-            earliest_pos = len(remaining)
-            earliest_token = None
-            
-            for special in self.special_tokens_sorted:
-                pos = remaining.find(special)
-                if pos != -1 and pos < earliest_pos:
-                    earliest_pos = pos
-                    earliest_token = special
-            
-            if earliest_token is None:
-                # No special token found, add remaining text
-                if remaining:
-                    result.append((remaining, False))
-                break
-            else:
-                # Add text before the special token
-                if earliest_pos > 0:
-                    result.append((remaining[:earliest_pos], False))
-                # Add the special token
-                result.append((earliest_token, True))
-                remaining = remaining[earliest_pos + len(earliest_token):]
-        
-        return result
+
+        escaped_special_tokens = map(re.escape, self.special_tokens_sorted)
+        pattern = f"({'|'.join(escaped_special_tokens)})"
+
+        special_toks_set = set(self.special_tokens_sorted)
+
+        return [(p, p in special_toks_set) for p in re.split(pattern, text) if p != ""]
 
     def _encode_chunk(self, text: str) -> list[int]:
         """
@@ -139,9 +142,22 @@ class Tokenizer:
             return []
         
         ids = []
-        # TODO: Implement encoding
+
+        for chunk in self.pat.findall(text):
+            chunk_bytes = chunk.encode("utf-8")
+            bpe_tokens = self._bpe(chunk_bytes)
+
+            current_token_ids = []
+            for bpe in bpe_tokens:
+                if bpe in self.inverse_vocab:
+                    current_token_ids.append(self.inverse_vocab[bpe])
+                else:
+                    for byte in bpe:
+                        current_token_ids.append(self.inverse_vocab[bytes([byte])])
+
+            ids.extend(current_token_ids)
         
-        raise NotImplementedError("Implement _encode_chunk")
+        return ids
 
     def encode(self, text: str) -> list[int]:
         """
@@ -188,10 +204,12 @@ class Tokenizer:
         """
         if not ids:
             return ""
+
+        bytes_list = [self.vocab[id] for id in ids]
+        concatenated_bytes = b"".join(bytes_list)
+
+        return concatenated_bytes.decode("utf-8", errors="replace")
         
-        # TODO: Implement decoding
-        
-        raise NotImplementedError("Implement decode")
 
     def encode_iterable(self, iterable: Iterator[str]) -> Iterator[int]:
         """
