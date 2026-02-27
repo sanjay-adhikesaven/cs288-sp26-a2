@@ -89,7 +89,7 @@ CONFIGS = {
         "context_length": 512,
         "pretrain_epochs": 5,
         "finetune_epochs": 15,
-        "batch_size": 16,
+        "batch_size": 32,
         "lr": 1e-4,
     }
 }
@@ -215,7 +215,7 @@ def pretrain_lm(
         warmup_steps=min(100, len(dataloader) // 5),
         max_grad_norm=1.0,
         device=device,
-        log_interval=max(1, len(dataloader) // 5),
+        log_interval=max(1, len(dataloader) // 50),
     )
     
     # Train

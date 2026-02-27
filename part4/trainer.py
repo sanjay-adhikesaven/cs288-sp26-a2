@@ -69,7 +69,8 @@ class Trainer:
         num_batches = 0
         for batch in self.train_dataloader:
             self.optimizer.zero_grad()
-            loss = self.compute_loss_fn(batch, self.model)
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                loss = self.compute_loss_fn(batch, self.model)
             loss.backward()
             gradient_clipping(self.model.parameters(), self.config.max_grad_norm)
             self.optimizer.step()
@@ -77,6 +78,8 @@ class Trainer:
             total_loss += loss.item()
             num_batches += 1
             self.global_step += 1
+            if self.global_step % self.config.log_interval == 0:
+                print(f"step {self.global_step} | loss {loss.item():.4f}", flush=True)
         return total_loss / num_batches if num_batches > 0 else 0.0
     
     @torch.no_grad()
@@ -87,7 +90,8 @@ class Trainer:
         total_loss = 0.0
         num_batches = 0
         for batch in self.val_dataloader:
-            loss = self.compute_loss_fn(batch, self.model)
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16):
+                loss = self.compute_loss_fn(batch, self.model)
             total_loss += loss.item()
             num_batches += 1
         return total_loss / num_batches if num_batches > 0 else 0.0
