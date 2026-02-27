@@ -458,7 +458,7 @@ class MultiHeadSelfAttention(nn.Module):
         K_BHLD = K_BLD.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
         V_BHLD = V_BLD.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
 
-        causal_mask = self._create_causal_mask(seq_len, device=torch.device('cpu'))
+        causal_mask = self._create_causal_mask(seq_len, device=x.device)
         output = scaled_dot_product_attention(Q_BHLD, K_BHLD, V_BHLD, causal_mask)
 
         output = output.transpose(1, 2).reshape(batch_size, seq_len, self.d_model)
@@ -537,7 +537,7 @@ class MultiHeadSelfAttentionWithRoPE(nn.Module):
         K_BHLD = K_BLD.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
         V_BHLD = V_BLD.view(batch_size, seq_len, self.num_heads, self.d_k).transpose(1, 2)
 
-        causal_mask = self._create_causal_mask(seq_len, device=torch.device('cpu'))
+        causal_mask = self._create_causal_mask(seq_len, device=x.device)
         output = scaled_dot_product_attention(self.rope(Q_BHLD, token_positions), self.rope(K_BHLD, token_positions), V_BHLD, causal_mask)
 
         output = output.transpose(1, 2).reshape(batch_size, seq_len, self.d_model)
