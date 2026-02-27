@@ -196,7 +196,7 @@ def pretrain_lm(
     dataloader = create_pretraining_dataloader(
         file_path=config["pretrain_data"],
         tokenizer=tokenizer,
-        batch_size=config["batch_size"],
+        batch_size=256,
         max_length=config["context_length"],
         stride=config["context_length"] // 2,
         shuffle=True,
@@ -342,7 +342,7 @@ def finetune_qa(
     train_dataloader = create_qa_dataloader(
         data=train_data,
         tokenizer=tokenizer,
-        batch_size=config["batch_size"],
+        batch_size=64,
         max_length=config["context_length"],
         num_choices=4,
         shuffle=True,
@@ -410,7 +410,7 @@ def evaluate_finetuned(
     dev_dataloader = create_qa_dataloader(
         data=dev_data,
         tokenizer=tokenizer,
-        batch_size=config["batch_size"],
+        batch_size=64,
         max_length=config["context_length"],
         num_choices=4,
         shuffle=False,
