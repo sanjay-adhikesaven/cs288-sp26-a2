@@ -20,6 +20,50 @@ class PromptTemplate:
         "basic": "Context: {context}\n\nQuestion: {question}\n\nChoices:\n{choices_formatted}\n\nAnswer:",
         "instruction": "Read the following passage and answer the question.\n\nPassage: {context}\n\nQuestion: {question}\n\n{choices_formatted}\n\nSelect the letter:",
         "simple": "{context}\n{question}\n{choices_formatted}\nThe answer is",
+        "few_shot": """You are a reading assistant who must read the given passage and choose the correct answer. Only output the letter (A, B, C, or D).
+
+                Example 1:
+                Passage:
+                Tom left his umbrella at home. When it started raining, he got wet.
+
+                Question:
+                Why did Tom get wet?
+
+                Choices:
+                A. He forgot his umbrella.
+                B. He went swimming.
+                C. He stayed indoors.
+                D. It was sunny.
+
+                Answer: A
+
+                Example 2:
+                Passage:
+                Sarah studied all night for her exam. The next day, she felt very tired but confident.
+
+                Question:
+                Why was Sarah tired?
+
+                Choices:
+                A. She exercised.
+                B. She studied all night.
+                C. She skipped school.
+                D. She traveled.
+
+                Answer: B
+
+                Now answer the following.
+
+                Passage:
+                {context}
+
+                Question:
+                {question}
+
+                Choices:
+                {choices_formatted}
+
+                Answer:"""
     }
     
     def __init__(self, template_name: str = "basic", custom_template: Optional[str] = None, choice_format: str = "letter"):

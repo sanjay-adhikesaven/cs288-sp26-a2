@@ -277,7 +277,7 @@ def evaluate_prompting(
     print(f"\nValidation examples: {len(dev_data)}")
     
     # Create pipeline
-    template = PromptTemplate(template_name="simple")
+    template = PromptTemplate(template_name="few_shot")
     pipeline = PromptingPipeline(
         model=model,
         tokenizer=tokenizer,
