@@ -89,7 +89,7 @@ CONFIGS = {
         "context_length": 512,
         "pretrain_epochs": 5,
         "finetune_epochs": 15,
-        "batch_size": 32,
+        "batch_size": 128,
         "lr": 1e-4,
     }
 }
@@ -196,7 +196,7 @@ def pretrain_lm(
     dataloader = create_pretraining_dataloader(
         file_path=config["pretrain_data"],
         tokenizer=tokenizer,
-        batch_size=64,
+        batch_size=config["batch_size"],
         max_length=config["context_length"],
         stride=config["context_length"] // 2,
         shuffle=True,
