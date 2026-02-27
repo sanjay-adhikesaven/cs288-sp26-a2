@@ -196,7 +196,7 @@ def pretrain_lm(
     dataloader = create_pretraining_dataloader(
         file_path=config["pretrain_data"],
         tokenizer=tokenizer,
-        batch_size=256,
+        batch_size=512,
         max_length=config["context_length"],
         stride=config["context_length"] // 2,
         shuffle=True,
