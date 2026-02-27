@@ -20,49 +20,18 @@ class PromptTemplate:
         "basic": "Context: {context}\n\nQuestion: {question}\n\nChoices:\n{choices_formatted}\n\nAnswer:",
         "instruction": "Read the following passage and answer the question.\n\nPassage: {context}\n\nQuestion: {question}\n\n{choices_formatted}\n\nSelect the letter:",
         "simple": "{context}\n{question}\n{choices_formatted}\nThe answer is",
-        "few_shot": """You are a reading assistant who must read the given passage and choose the correct answer. Only output the letter (A, B, C, or D).
-
-                Example 1:
-                Passage:
-                Tom left his umbrella at home. When it started raining, he got wet.
-
-                Question:
-                Why did Tom get wet?
-
-                Choices:
-                A. He forgot his umbrella.
-                B. He went swimming.
-                C. He stayed indoors.
-                D. It was sunny.
-
+        "few_shot": """Read the following passage and output only one letter: A, B, C, or D.
+                Example 1: Tom left his umbrella at home. When it started raining, he got wet.
+                Q: Why did Tom get wet? Choices: A) He forgot his umbrella. B) He went swimming. C) He stayed indoors. D) It was sunny.
                 Answer: A
 
-                Example 2:
-                Passage:
-                Sarah studied all night for her exam. The next day, she felt very tired but confident.
-
-                Question:
-                Why was Sarah tired?
-
-                Choices:
-                A. She exercised.
-                B. She studied all night.
-                C. She skipped school.
-                D. She traveled.
-
+                Example 2: Sarah studied all night for her exam. The next day, she felt very tired but confident.
+                Q: Why was Sarah tired? Choices: A) She exercised. B) She studied all night. C) She skipped school. D) She traveled.
                 Answer: B
 
-                Now answer the following.
-
-                Passage:
+                Now answer the following: 
                 {context}
-
-                Question:
-                {question}
-
-                Choices:
-                {choices_formatted}
-
+                Q: {question} Choices: {choices_formatted}
                 Answer:"""
     }
     
@@ -104,7 +73,7 @@ class PromptingPipeline:
     def predict_single(self, context: str, question: str, choices: List[str], return_probs: bool = False):
         self.model.eval()
         prompt = self.template.format(context, question, choices)
-        input_ids = torch.tensor([self.tokenizer.encode(prompt)], device=self.device)
+        input_ids = torch.tensor([self.tokenizer.encode(prompt)[-512:]], device=self.device)
         logits = self.model(input_ids)[:, -1, :]
         
         choice_labels = ["A", "B", "C", "D"][:len(choices)]
